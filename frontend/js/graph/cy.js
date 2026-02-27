@@ -1,3 +1,5 @@
+import { getAxisVars } from "./layerAxis.js";
+
 let graphAnimToken = 0;
 
 export function getGraphAnimToken() {
@@ -79,21 +81,29 @@ export function hasPresetPositions(elements) {
   );
 }
 
-export function setGraphInstant(cy, elements, { onAfterLayout } = {}) {
+export function setGraphInstant(cy, elements, { keepViewport = true, onAfterLayout } = {}) {
+  bumpGraphAnimToken();
   cy.stop();
   cy.elements().stop();
+
+  const vp = keepViewport ? cy.viewport() : null;
+
   cy.elements().remove();
   cy.add(elements);
   cy.nodes().ungrabify();
 
   const preset = hasPresetPositions(elements);
-  const layoutOpts = preset
-    ? { name: "preset", fit: true, padding: 30 }
-    : { name: "breadthfirst", directed: true, spacingFactor: 1.35, fit: true, padding: 30 };
 
-  cy.layout(layoutOpts).run();
-  cy.resize();
-  cy.fit(undefined, 30);
+  cy.layout(
+    preset
+      ? { name: "preset", animate: false, fit: false, padding: 30 }
+      : { name: "breadthfirst", directed: true, spacingFactor: 1.25, animate: false, fit: true, padding: 30 }
+  ).run();
+
+  cy.elements().style("opacity", 1);
+
+  if (vp) cy.viewport(vp);
+
   onAfterLayout?.();
 }
 
@@ -116,12 +126,10 @@ export function setGraphAnimated(
   const preset = hasPresetPositions(elements);
   cy.layout(
     preset
-      ? { name: "preset", animate: false, fit: true, padding: 30 }
+      ? { name: "preset", animate: false, fit: false, padding: 30 }
       : { name: "breadthfirst", directed: true, spacingFactor: 1.35, animate: false, fit: true, padding: 30 }
   ).run();
 
-  cy.resize();
-  cy.fit(undefined, 30);
   onAfterLayout?.();
 
   setTimeout(async () => {
@@ -144,10 +152,10 @@ export function setGraphAnimated(
     const roots = nodes.filter((n) => (indeg.get(n.id()) || 0) === 0);
     const root = roots[0];
 
-    if (!root) {
-      cy.elements().animate({ style: { opacity: 1 } }, { duration: nodeFadeMs });
-      return;
-    }
+//    if (!root) {
+//      cy.elements().animate({ style: { opacity: 1 } }, { duration: nodeFadeMs });
+//      return;
+//    }
 
     const out = new Map();
     nodes.forEach((n) => out.set(n.id(), []));
@@ -222,4 +230,22 @@ export function clearGraph(cy) {
   cy.stop();
   cy.elements().stop();
   cy.elements().remove();
+}
+
+export function snapNodesToLayers(cy, { layerGap = 120 } = {}) {
+  const vars = getAxisVars();
+  if (!vars.length) return;
+
+  const yOf = new Map();
+  vars.forEach((v, i) => yOf.set(v, (i + 1) * layerGap));
+  const terminalY = (vars.length + 1) * layerGap;
+
+  cy.batch(() => {
+    cy.nodes().forEach(n => {
+      const lab = (n.data("label") ?? "").toString();
+      const isTerm = n.hasClass("terminal") || lab === "0" || lab === "1";
+      const y = isTerm ? terminalY : yOf.get(lab);
+      if (y != null) n.position({ x: n.position("x"), y });
+    });
+  });
 }

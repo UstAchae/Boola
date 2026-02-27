@@ -22,8 +22,14 @@ export const TERM_ANIM = {
 };
 
 export const REDUNDANT_ANIM = {
-  highlightMs: 420,
-  fadeOutMs: 420,
-  edgeMorphMs: 520,
+  highlightMs: 260,
+  fadeOutMs: 260,
+  edgeMorphMs: 260,
   betweenBatchMs: 260
+};
+
+export const MERGE_ANIM = {
+  highlightMs: 320,
+  slideMs: 520,
+  betweenBatchMs: 220,
 };

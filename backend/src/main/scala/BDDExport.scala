@@ -23,6 +23,9 @@ object BDDExport {
     val edges = scala.collection.mutable.ListBuffer[CyEdge]()
     val seen = scala.collection.mutable.Set[String]()
 
+    val expanded = scala.collection.mutable.Set[String]()
+    val seenEdges = scala.collection.mutable.Set[String]()
+
     // ---------- deterministic tree positions ----------
     val pos = scala.collection.mutable.Map[String, CyPos]()
 
@@ -51,15 +54,11 @@ object BDDExport {
       }
     }
 
-    // only unreduced BDD tree can match this position restriction.
-    assign(root, level0 = 0, l = 0.0, r = leafCount)
-
     def ensureNode(v: BDDNode): String = {
       val id = cyIdOf(v)
       if (!seen.contains(id)) {
         seen += id
         val p = pos.getOrElse(id, CyPos(0.0, 0.0))
-
         v match {
           case Terminal(value, _, _) =>
             nodes += CyNode(
@@ -83,25 +82,37 @@ object BDDExport {
 
     def addEdge(src: String, dst: String, lab: String, cls: String): Unit = {
       val id = s"e_${src}_${lab}_${dst}"
-      edges += CyEdge(
-        data = CyEdgeData(id, src, dst, lab),
-        classes = Some(cls)
-      )
+      if (!seenEdges.contains(id)) {
+        seenEdges += id
+        edges += CyEdge(
+          data = CyEdgeData(id, src, dst, lab),
+          classes = Some(cls)
+        )
+      }
     }
 
-    def go(v: BDDNode): Unit = v match {
-      case NonTerminal(_, low, high, _, _) =>
-        val from = ensureNode(v)
-        val loId = ensureNode(low)
-        val hiId = ensureNode(high)
+    def go(v: BDDNode): Unit = {
+      val vid = cyIdOf(v)
+      if (expanded.contains(vid)) return
+      expanded += vid
 
-        addEdge(from, loId, "0", "zero")
-        addEdge(from, hiId, "1", "one")
+      v match {
+        case NonTerminal(_, low, high, _, _) =>
+          val from = ensureNode(v)
+          val loId = ensureNode(low)
+          val hiId = ensureNode(high)
 
-        go(low)
-        go(high)
-      case _ => ()
+          addEdge(from, loId, "0", "zero")
+          addEdge(from, hiId, "1", "one")
+
+          go(low)
+          go(high)
+
+        case _ => ()
+      }
     }
+
+    assign(root, level0 = 0, l = 0.0, r = leafCount)
 
     go(root)
     CyElements(nodes.toList, edges.toList)

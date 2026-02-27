@@ -9,6 +9,9 @@ export function createState() {
     bddTimer: null,
     lastBddPayload: null,
     lastBddElements: null,
-    bddReqSeq: 0
+    bddReqSeq: 0,
+    appliedReduce: [], // values: "terminals" | "redundant" | "merge"
+    isReducing: false,
+    lastRequestedExpr: null,
   };
 }

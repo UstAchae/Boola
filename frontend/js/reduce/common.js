@@ -59,6 +59,60 @@ export function extentWidthWithMin(cy, minSpan = 240) {
   return Math.max(ext.x2 - ext.x1, minSpan);
 }
 
+export function applyOps(cy, ops) {
+  if (!ops?.length) return;
+
+  console.log("[applyOps]", ops.map(o => ({ kind: o.kind, ids: o.ids?.length, to: o.to })));
+
+  cy.batch(() => {
+    for (const op of ops) {
+      if (!op) continue;
+
+      if (op.kind === "redirectIncomingEdges") {
+        const to = op.to;
+        if (!to) continue;
+
+        const dupSet = new Set(op.ids || []);
+        const edgesToRewrite = cy.edges().filter(e => dupSet.has(e.data("target")));
+
+        edgesToRewrite.forEach(e => {
+          const src = e.data("source");
+          const lab = (e.data("label") ?? "").toString();
+          const newId = `e_${src}_${lab}_${to}`;
+
+          // 只保留语义 class，别复制 dim/focus
+          const cls =
+            e.hasClass("zero") ? "zero" :
+            e.hasClass("one")  ? "one"  :
+            "";
+
+          const existing = cy.getElementById(newId);
+          if (existing.length) {
+            existing.removeClass("dim");
+            existing.removeClass("focus");
+            e.remove();
+            return;
+          }
+
+          cy.add({
+            group: "edges",
+            data: { id: newId, source: src, target: to, label: lab },
+            classes: cls
+          });
+
+          e.remove();
+        });
+      }
+
+      if (op.kind === "removeNodes") {
+        const ids = op.ids || [];
+        ids.forEach(id => cy.getElementById(id).remove());
+      }
+    }
+  });
+}
+
+
 export async function spreadLayerX(cy, layerNodes, { duration = LAYER_LAYOUT.moveMs } = {}) {
   const ns = (layerNodes || cy.collection()).filter((n) => n.isNode() && !isTerminalNode(n));
   const n = ns.length;
@@ -81,14 +135,6 @@ export async function spreadLayerX(cy, layerNodes, { duration = LAYER_LAYOUT.mov
   });
 
   await Promise.all(anims);
-}
-
-export function fitLayer(cy, layerNodes, { padding = LAYER_LAYOUT.fitPadding } = {}) {
-  const ns = (layerNodes || cy.collection()).filter((n) => n.isNode());
-  if (!ns.length) return;
-
-  const neighborhood = ns.union(ns.connectedEdges()).union(ns.connectedNodes());
-  cy.fit(neighborhood, padding);
 }
 
 export async function spreadTerminalsX(cy, termNodes, { duration = 700, y = null } = {}) {
@@ -128,23 +174,4 @@ export async function relayoutTerminalLayerEvenly(cy, { duration = 900 } = {}) {
   });
 
   await spreadTerminalsX(cy, terms, { duration, y: baseY });
-}
-
-export function safeFit(cy, eles, padding = 50, { maxZoom = 1.2, minBox = 120 } = {}) {
-  const collection = eles && eles.length ? eles : cy.elements();
-
-  const bb = collection.boundingBox({ includeLabels: true });
-  const w = bb.w || 0;
-  const h = bb.h || 0;
-
-  // If the box is too small (often due to overlap during animations),
-  // do not zoom aggressively.
-  if (w < minBox && h < minBox) {
-    cy.fit(cy.elements(), padding);
-    if (cy.zoom() > maxZoom) cy.zoom(maxZoom);
-    return;
-  }
-
-  cy.fit(collection, padding);
-  if (cy.zoom() > maxZoom) cy.zoom(maxZoom);
 }

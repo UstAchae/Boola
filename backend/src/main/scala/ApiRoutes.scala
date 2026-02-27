@@ -4,7 +4,6 @@ import org.http4s.dsl.io._
 import org.http4s.circe._
 import io.circe.generic.auto._
 import io.circe.syntax._
-import io.circe.Json
 
 object ApiRoutes {
 
@@ -23,115 +22,138 @@ object ApiRoutes {
   private implicit val reduceReqDecoder: EntityDecoder[IO, ReduceTraceReq] =
     jsonOf[IO, ReduceTraceReq]
 
-  private implicit val reduceRespEncoder: EntityEncoder[IO, ReduceTraceResp] = 
-    jsonEncoderOf[IO, ReduceTraceResp]
+  private implicit val terminalsTraceRespEncoder: EntityEncoder[IO, ReduceTerminalsTraceResp] =
+    jsonEncoderOf[IO, ReduceTerminalsTraceResp]
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
 
     case GET -> Root =>
       Ok("OK")
 
-    case req@POST -> Root / "truth-table" =>
+    case req @ POST -> Root / "truth-table" =>
       (for {
         body <- req.as[TruthTableReq]
-
         expr <- IO.fromEither(
           TempParser.parse(body.expr).left.map(e => new IllegalArgumentException(e.toString))
         )
-
         table <- IO(BoolExpr.truthTable(expr, body.vars))
-          .handleErrorWith {
-            case e: IllegalArgumentException => IO.raiseError(e) // let outer handle map to 400
-            case other => IO.raiseError(other)
-          }
-
         rows = table.map { case (envMap, out) =>
           val envList = body.vars.map(v => envMap(v))
           TruthTableRow(envList, out)
         }
-
-        resp = TruthTableResp(body.vars, rows)
-        r <- Ok(resp.asJson)
+        r <- Ok(TruthTableResp(body.vars, rows).asJson)
       } yield r).handleErrorWith {
         case e: IllegalArgumentException => BadRequest(e.getMessage)
         case other => BadRequest(other.getMessage)
       }
-    case req@POST -> Root / "bdd" =>
+
+    case req @ POST -> Root / "bdd" =>
       (for {
         body <- req.as[BddReq]
-
         expr <- IO.fromEither(
           TempParser.parse(body.expr).left.map(e => new IllegalArgumentException(e.toString))
         )
-
         tt <- IO(BoolExpr.truthTable(expr, body.vars))
-          .handleErrorWith {
-            case e: IllegalArgumentException => IO.raiseError(e)
-            case other => IO.raiseError(other)
-          }
-
         rows = tt.map { case (envMap, out) =>
           BDDFromTruthTable.Row(
             body.vars.map(v => envMap(v)).toVector,
             out
           )
         }.toVector
-
         root = BDDFromTruthTable.build(body.vars.toVector, rows)
         elements = BDDExport.toCytoscape(root, body.vars.toVector)
-
         r <- Ok(BddResp(elements).asJson)
       } yield r).handleErrorWith {
-        case e: IllegalArgumentException =>
-          BadRequest(e.getMessage)
-
+        case e: IllegalArgumentException => BadRequest(e.getMessage)
         case other =>
-          BadRequest(
-            s"${other.getClass.getName}: ${Option(other.getMessage).getOrElse("")}"
-          )
+          BadRequest(s"${other.getClass.getName}: ${Option(other.getMessage).getOrElse("")}")
       }
 
-    case req@POST -> Root / "bdd" / "reduce-trace" =>
+    case req @ POST -> Root / "bdd" / "reduce-terminals-trace" =>
       (for {
         body <- req.as[ReduceTraceReq]
-
+        _ <- IO.println(s"[reduce-merge-trace] applied(back) = ${body.applied}")
+        _ <- IO.println(s"[reduce-terminals-trace] applied(back) = ${body.applied}")
+        _ <- IO.println(s"[reduce-redundant-trace] applied(back) = ${body.applied}")
         expr <- IO.fromEither(
           TempParser.parse(body.expr).left.map(e => new IllegalArgumentException(e.toString))
         )
 
         tt <- IO(BoolExpr.truthTable(expr, body.vars))
-          .handleErrorWith {
-            case e: IllegalArgumentException => IO.raiseError(e)
-            case other => IO.raiseError(other)
-          }
-
         rows = tt.map { case (envMap, out) =>
-          BDDFromTruthTable.Row(
-            body.vars.map(v => envMap(v)).toVector,
-            out
-          )
+          BDDFromTruthTable.Row(body.vars.map(v => envMap(v)).toVector, out)
         }.toVector
 
-        root = BDDFromTruthTable.build(body.vars.toVector, rows)
+        root0 = BDDFromTruthTable.build(body.vars.toVector, rows)
+        rootStart = ReduceSnap.applyAlreadyApplied(root0, body.applied)
+        initial = BDDExport.toCytoscape(rootStart, body.vars.toVector)
 
-        stepsBuf = scala.collection.mutable.ListBuffer.empty[ReduceStepResp]
+        steps <- IO {
+          ReduceSnap.traceTerminals(rootStart, body.vars.toVector)
+        }
 
-        _ = BDDCore.reduceWithTrace(
-          root = root,
-          n = body.vars.length,
-          onStep = step => {
-            val elements = BDDExport.toCytoscape(root, body.vars.toVector)
-            val focusIds = step.focus.map(BDDExport.cyIdOf)
-            stepsBuf += ReduceStepResp(step.title, elements, focusIds)
-          }
-        )
-
-        r <- Ok(ReduceTraceResp(stepsBuf.toList).asJson)
+        r <- Ok(ReduceTerminalsTraceResp(initial, steps).asJson)
       } yield r).handleErrorWith {
         case e: IllegalArgumentException => BadRequest(e.getMessage)
         case other => BadRequest(other.getMessage)
       }
 
+    case req @ POST -> Root / "bdd" / "reduce-redundant-trace" =>
+      (for {
+        body <- req.as[ReduceTraceReq]
+        _ <- IO.println(s"[reduce-merge-trace] applied(back) = ${body.applied}")
+        _ <- IO.println(s"[reduce-terminals-trace] applied(back) = ${body.applied}")
+        _ <- IO.println(s"[reduce-redundant-trace] applied(back) = ${body.applied}")
+        expr <- IO.fromEither(
+          TempParser.parse(body.expr).left.map(e => new IllegalArgumentException(e.toString))
+        )
 
+        tt <- IO(BoolExpr.truthTable(expr, body.vars))
+        rows = tt.map { case (envMap, out) =>
+          BDDFromTruthTable.Row(body.vars.map(v => envMap(v)).toVector, out)
+        }.toVector
+
+        root0 = BDDFromTruthTable.build(body.vars.toVector, rows)
+        rootStart = ReduceSnap.applyAlreadyApplied(root0, body.applied)
+        initial = BDDExport.toCytoscape(rootStart, body.vars.toVector)
+
+        steps <- IO {
+          ReduceSnap.traceRedundant(rootStart, body.vars.toVector)
+        }
+
+        r <- Ok(ReduceSnapTraceResp(initial, steps).asJson)
+      } yield r).handleErrorWith {
+        case e: IllegalArgumentException => BadRequest(e.getMessage)
+        case other => BadRequest(other.getMessage)
+      }
+
+    case req@POST -> Root / "bdd" / "reduce-merge-trace" =>
+      (for {
+        body <- req.as[ReduceTraceReq]
+        _ <- IO.println(s"[reduce-merge-trace] applied(back) = ${body.applied}")
+        _ <- IO.println(s"[reduce-terminals-trace] applied(back) = ${body.applied}")
+        _ <- IO.println(s"[reduce-redundant-trace] applied(back) = ${body.applied}")
+        expr <- IO.fromEither(
+          TempParser.parse(body.expr).left.map(e => new IllegalArgumentException(e.toString))
+        )
+
+        tt <- IO(BoolExpr.truthTable(expr, body.vars))
+        rows = tt.map { case (envMap, out) =>
+          BDDFromTruthTable.Row(body.vars.map(v => envMap(v)).toVector, out)
+        }.toVector
+
+        root0 = BDDFromTruthTable.build(body.vars.toVector, rows)
+        rootStart = ReduceSnap.applyAlreadyApplied(root0, body.applied)
+        initial = BDDExport.toCytoscape(rootStart, body.vars.toVector)
+
+        steps <- IO {
+          ReduceSnap.traceMerge(rootStart, body.vars.toVector)
+        }
+
+        r <- Ok(ReduceSnapTraceResp(initial, steps).asJson)
+      } yield r).handleErrorWith {
+        case e: IllegalArgumentException => BadRequest(e.getMessage)
+        case other => BadRequest(other.getMessage)
+      }
   }
 }

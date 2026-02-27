@@ -1,7 +1,7 @@
 import { syncOrder } from "./defs.js";
 
 export function setReduceButtonsEnabled(dom, enabled) {
-  [dom.btnReduceTerminals, dom.btnReduceRedundant, dom.btnReduceMerge].forEach((b) => {
+  [dom.btnReduce, dom.btnReduceTerminals, dom.btnReduceRedundant, dom.btnReduceMerge].forEach((b) => {
     if (!b) return;
     b.disabled = !enabled;
   });

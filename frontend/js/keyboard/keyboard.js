@@ -5,12 +5,6 @@ export function setupKeyboard(ctx) {
     if (!dom.keyboardRoot) return;
     dom.keyboardRoot.classList.toggle("is-collapsed", collapsed);
     if (dom.btnKbdToggle) dom.btnKbdToggle.setAttribute("aria-expanded", String(!collapsed));
-
-    requestAnimationFrame(() => {
-      cy.resize();
-      cy.fit(undefined, 30);
-      axis.sync();
-    });
   }
 
   dom.btnKbdToggle?.addEventListener("click", () => {

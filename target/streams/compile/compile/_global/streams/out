@@ -1,5 +1,0 @@
-[error] -- [E008] Not Found Error: C:\G400\Individual project\OBDD-Visualization\backend\src\main\scala\ApiRoutes.scala:119:52 
-[error] 119 |            val focusIds = step.focus.map(BDDExport.cyIdOf)
-[error]     |                                          ^^^^^^^^^^^^^^^^
-[error]     |                      value cyIdOf is not a member of object BDDExport
-[error] one error found
