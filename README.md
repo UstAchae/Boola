@@ -2,6 +2,20 @@
 
 Boola can be deployed as a single Scala service. The backend serves the `/api` endpoints and also hosts the static files in `frontend/`.
 
+## Live Demo
+
+Boola is publicly available at:
+
+```text
+https://www.boola.io
+```
+
+The `www` subdomain redirects to the primary domain:
+
+```text
+https://boola.io
+```
+
 ## Local Run
 
 Requirements:
@@ -94,22 +108,24 @@ If the platform asks for a health check path, use:
 
 ## Custom Domain
 
-If you already own `boola.com`, the usual steps are:
+This project is currently configured to use the `boola.io` domain.
+
+If you already own `boola.io`, the usual steps are:
 
 1. Deploy the application to Render, Railway, Fly.io, or your own VPS.
-2. Add `boola.com` as a custom domain in the hosting platform.
+2. Add `boola.io` as a custom domain in the hosting platform.
 3. Configure DNS records in your domain registrar dashboard as required by the platform.
 4. Wait for the platform to issue the HTTPS certificate.
 
 Common DNS setup:
 
-- Root domain `boola.com`: usually an `A` record or `ALIAS/ANAME`
-- Subdomain `www.boola.com`: usually a `CNAME`
+- Root domain `boola.io`: usually an `A` record or `ALIAS/ANAME`
+- Subdomain `www.boola.io`: usually a `CNAME`
 
 Recommended redirect policy:
 
-- Use `boola.com` as the primary domain
-- Redirect `www.boola.com` to `boola.com` with HTTP 301
+- Use `boola.io` as the primary domain
+- Redirect `www.boola.io` to `boola.io` with HTTP 301
 
 ## Non-Docker Deployment
 
