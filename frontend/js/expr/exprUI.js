@@ -62,6 +62,19 @@ function focusIndex(state, dom, idx, placeCursorAtEnd = true) {
   });
 }
 
+function applyMobileKeyboardMode(state, input) {
+  if (!input) return;
+
+  const customKeyboardOnly = Boolean(state.prefersTouchKeyboard);
+  input.readOnly = customKeyboardOnly;
+  input.setAttribute("inputmode", customKeyboardOnly ? "none" : "text");
+  input.setAttribute("autocomplete", "off");
+  input.setAttribute("autocorrect", "off");
+  input.setAttribute("autocapitalize", "off");
+  input.setAttribute("spellcheck", "false");
+  input.classList.toggle("expr-input--custom-kbd", customKeyboardOnly);
+}
+
 let dragExprFromIdx = -1;
 
 function ensureVarLimitDialog() {
@@ -1484,6 +1497,7 @@ export function renderExprList(ctx) {
     input.name = `expr-${idx}`;
     input.value = expr.text || "";
     input.placeholder = "";
+    applyMobileKeyboardMode(state, input);
     syncApplyCodeStyle(input);
 
     input.addEventListener("focus", () => {

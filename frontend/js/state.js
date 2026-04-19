@@ -14,12 +14,20 @@ export function defaultBddPane() {
 }
 
 export function createState() {
+  const prefersTouchKeyboard =
+    typeof window !== "undefined" &&
+    (
+      window.matchMedia?.("(pointer: coarse)")?.matches ||
+      navigator.maxTouchPoints > 0
+    );
+
   return {
     apList: ["p", "q", "r", "s"],
     expressions: [{ id: crypto.randomUUID(), text: "", order: [], bddPane: defaultBddPane() }],
     activeIndex: 0,
     selectedForApply: new Set(),
     focusedInput: null,
+    prefersTouchKeyboard,
     bddTimer: null,
     lastBddPayload: null,
 

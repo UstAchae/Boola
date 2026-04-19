@@ -232,6 +232,10 @@ body{
   box-shadow: 0 0 0 3px rgba(37,99,235,.12);
 }
 
+.expr-input--custom-kbd{
+  caret-color: var(--accent);
+}
+
 .expr-input--invalid{
   border-color: rgba(239,68,68,.7);
   box-shadow: 0 0 0 2px rgba(239,68,68,.12);
@@ -1005,4 +1009,3 @@ body{
   }
 
 }
-
