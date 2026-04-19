@@ -23,10 +23,13 @@ assembly / assemblyJarName := s"${name.value}-assembly-${version.value}.jar"
 assembly / mainClass := Some("Main")
 assembly / assemblyMergeStrategy := {
   case PathList("META-INF", "MANIFEST.MF") => MergeStrategy.discard
+  case PathList("META-INF", "INDEX.LIST") => MergeStrategy.discard
   case PathList("META-INF", xs @ _*) if xs.exists(_.endsWith(".SF")) => MergeStrategy.discard
   case PathList("META-INF", xs @ _*) if xs.exists(_.endsWith(".DSA")) => MergeStrategy.discard
   case PathList("META-INF", xs @ _*) if xs.exists(_.endsWith(".RSA")) => MergeStrategy.discard
   case PathList("META-INF", xs @ _*) => MergeStrategy.deduplicate
+  case "NOTICE" => MergeStrategy.discard
+  case "LICENSE" => MergeStrategy.discard
   case "module-info.class" => MergeStrategy.discard
   case _ => MergeStrategy.deduplicate
 }
