@@ -81,6 +81,86 @@ const dom = getDom();
 const cy = createCy(dom.cyContainer);
 window.cy = cy;
 
+const BOOLA_DEBUG =
+  (typeof window !== "undefined" && (
+    window.localStorage?.getItem("boola:debug") === "1" ||
+    /(?:^|[?&])debug=1(?:&|$)/.test(window.location?.search || "")
+  ));
+const boolaDebugLog = [];
+
+function boolaStateSnapshot() {
+  return {
+    activeIndex: state.activeIndex,
+    isReducing: state.isReducing,
+    skipReductionApplied: state.skipReductionApplied,
+    hasApplySession: Boolean(state.applyTraceSession),
+    applyIdx: state.applyTraceSession?.idx ?? null,
+    hasRestrictSession: Boolean(state.restrictTraceSession),
+    restrictIdx: state.restrictTraceSession?.idx ?? null,
+    lastRequestedKey: state.lastRequestedKey
+  };
+}
+
+function debugLog(event, payload = {}) {
+  if (!BOOLA_DEBUG) return;
+  const row = {
+    t: new Date().toISOString(),
+    event,
+    ...payload,
+    state: boolaStateSnapshot()
+  };
+  boolaDebugLog.push(row);
+  if (boolaDebugLog.length > 500) boolaDebugLog.shift();
+  // Keep console output concise and searchable.
+  // eslint-disable-next-line no-console
+  console.debug("[boola-debug]", event, row);
+}
+
+if (typeof window !== "undefined") {
+  window.boolaDebugDump = () => [...boolaDebugLog];
+  window.boolaDebugClear = () => {
+    boolaDebugLog.length = 0;
+    return true;
+  };
+  window.addEventListener("error", (e) => {
+    debugLog("window.error", { message: e?.message || "", source: e?.filename || "" });
+  });
+  window.addEventListener("unhandledrejection", (e) => {
+    debugLog("window.unhandledrejection", { reason: String(e?.reason || "") });
+  });
+}
+
+// Trace global state flips; this is crucial for diagnosing "UI frozen" cases.
+let reducingValue = Boolean(state.isReducing);
+Object.defineProperty(state, "isReducing", {
+  configurable: true,
+  enumerable: true,
+  get() {
+    return reducingValue;
+  },
+  set(next) {
+    const normalized = Boolean(next);
+    if (normalized === reducingValue) return;
+    reducingValue = normalized;
+    debugLog("state.isReducing.changed", { next: normalized });
+  }
+});
+
+let activeIndexValue = Number(state.activeIndex) || 0;
+Object.defineProperty(state, "activeIndex", {
+  configurable: true,
+  enumerable: true,
+  get() {
+    return activeIndexValue;
+  },
+  set(next) {
+    const normalized = Number(next);
+    if (!Number.isFinite(normalized) || normalized === activeIndexValue) return;
+    activeIndexValue = normalized;
+    debugLog("state.activeIndex.changed", { next: normalized });
+  }
+});
+
 disableUserZoom(cy);
 enableHorizontalDragOnly(cy, { layerGap: 120 });
 
@@ -414,6 +494,7 @@ const ctx = {
   expr,
   callbacks: {
     onExprChanged() {
+      debugLog("callbacks.onExprChanged");
       refreshBddBarPrimaryButtons();
       scheduleLineAnalysisRefresh();
       scheduleBdd();
@@ -1567,9 +1648,25 @@ function wireButtons() {
   // Primary: full Bryant reduce (OBDD) from server.
   // If skip-reduced view is active, clicking again restores pre-reduction BDD.
   dom.btnReduce?.addEventListener("click", async (ev) => {
+    debugLog("btnReduce.click", {
+      shiftKey: Boolean(ev?.shiftKey),
+      canUndo: canUndoSkipReduction()
+    });
     if (state.isReducing) return;
+    // Skip/undo belongs to plain-expression canvas mode. Force-exit any stale
+    // apply/restrict trace session so reducible-step buttons and callbacks
+    // cannot keep reading old interactive session state.
+    clearApplyPendingCompareHighlight(state.applyTraceSession);
+    clearApplyCompareHighlight();
+    clearRestrictInteractiveFocus();
+    state.applyTraceSession = null;
+    state.restrictTraceSession = null;
+    state.isRestrictTracing = false;
+
     if (ev.shiftKey || canUndoSkipReduction()) {
+      debugLog("btnReduce.undo.start");
       await restoreBaseGraphIfAvailable();
+      debugLog("btnReduce.undo.done");
       return;
     }
     if (!state.lastBddPayload) return;
@@ -1581,13 +1678,23 @@ function wireButtons() {
 
     state.isReducing = true;
     const ownerIdx = state.activeIndex;
+    const reducingGuard = setTimeout(() => {
+      if (!state.isReducing) return;
+      debugLog("btnReduce.skip.watchdog.force_unlock", { ownerIdx });
+      state.isReducing = false;
+      refreshCanvasReduceButtons();
+      refreshBddBarPrimaryButtons();
+    }, 20000);
     try {
+      debugLog("btnReduce.skip.start", { ownerIdx });
       const { expr: exprStr, vars } = state.lastBddPayload;
       const controller = new AbortController();
       const t = setTimeout(() => controller.abort(), 12000);
       let resp;
       try {
+        debugLog("btnReduce.skip.fetch.start", { varsCount: Array.isArray(vars) ? vars.length : -1 });
         resp = await fetchBddReduced(exprStr, vars, controller.signal);
+        debugLog("btnReduce.skip.fetch.done", { status: resp?.status });
       } finally {
         clearTimeout(t);
       }
@@ -1595,15 +1702,18 @@ function wireButtons() {
       if (!resp.ok) {
         const txt = await resp.text().catch(() => "");
         console.error("[reduce-full] HTTP not ok", resp.status, txt);
+        debugLog("btnReduce.skip.http_not_ok", { status: resp.status, body: txt.slice(0, 200) });
         return;
       }
 
       const data = await resp.json().catch((e) => {
         console.error("[reduce-full] JSON parse failed", e);
+        debugLog("btnReduce.skip.json.error", { message: String(e?.message || e) });
         return null;
       });
       if (!data?.elements?.nodes || !data?.elements?.edges) {
         console.error("[reduce-full] bad payload", data);
+        debugLog("btnReduce.skip.bad_payload");
         return;
       }
 
@@ -1614,27 +1724,32 @@ function wireButtons() {
       state.bddLayoutKind = "aux_sugiyama";
 
       cancelAllGraphAnims(cy);
-      await setGraphAnimated(
-        cy,
-        data.elements,
-        ANIM,
-        {
-          bddLayoutKind: state.bddLayoutKind,
-          onAfterLayout: () => {
-            axis.sync();
-          }
-        },
-        vars,
-        state.userX
-      );
+      // Use instant snapshot here instead of animated replace. In production
+      // latency/jitter conditions, animated replacement can occasionally stall
+      // and keep the UI in reducing mode.
+      await setGraphSnapshot(data.elements, vars, { bddLayoutKind: state.bddLayoutKind });
+      debugLog("btnReduce.skip.graph_snapshot.done");
       setDraggingEnabled(true);
-      await smoothFit(cy, undefined, { padding: 30, duration: 260 });
+      const fitOutcome = await Promise.race([
+        smoothFit(cy, undefined, { padding: 30, duration: 260 })
+          .then(() => "ok")
+          .catch((e) => {
+            debugLog("btnReduce.skip.smooth_fit.error", { message: String(e?.message || e) });
+            return "error";
+          }),
+        new Promise((resolve) => setTimeout(() => resolve("timeout"), 1200))
+      ]);
+      debugLog("btnReduce.skip.smooth_fit.done", { outcome: fitOutcome });
       axis.sync();
       persistBddPane(ownerIdx);
+      debugLog("btnReduce.skip.done");
     } catch (e) {
       if (e?.name !== "AbortError") console.error("[reduce-full] failed", e);
+      debugLog("btnReduce.skip.error", { name: String(e?.name || ""), message: String(e?.message || e) });
     } finally {
+      clearTimeout(reducingGuard);
       state.isReducing = false;
+      debugLog("btnReduce.skip.finally");
       refreshCanvasReduceButtons();
     }
   });
