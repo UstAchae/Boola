@@ -1,4 +1,3 @@
-// backend/src/main/scala/api/Main.scala
 import cats.effect._
 import cats.syntax.all._
 import com.comcast.ip4s._
@@ -11,13 +10,8 @@ import org.http4s.server.staticcontent._
 
 object Main extends IOApp.Simple {
 
-  // Serve files from: <project-root>/frontend by default, or a custom path in deployment.
-  private val frontendPath: String = sys.env.getOrElse("STATIC_DIR", "frontend")
-  private val frontendDir: Path = Path(frontendPath)
-  private val host: Host = Host.fromString(sys.env.getOrElse("HOST", "0.0.0.0")).getOrElse(ipv4"0.0.0.0")
-  private val port: Port = Port.fromInt(
-    sys.env.get("PORT").flatMap(_.toIntOption).getOrElse(8080)
-  ).getOrElse(port"8080")
+  // Serve files from: <project-root>/frontend
+  private val frontendDir: Path = Path("frontend")
 
   // 1) GET / -> frontend/index.html
   private val indexRoute: HttpRoutes[IO] = HttpRoutes.of[IO] {
@@ -29,9 +23,9 @@ object Main extends IOApp.Simple {
 
   // 2) GET /styles.css, /app.js, etc.
   private val staticFiles: HttpRoutes[IO] =
-    fileService[IO](FileService.Config(systemPath = frontendPath))
+    fileService[IO](FileService.Config(systemPath = "frontend"))
 
-  // 3) API routes (http4s handlers in ApiRoutes)
+  // 3) API routes (existing http4s endpoints)
   private val api: HttpRoutes[IO] = ApiRoutes.routes
 
   private val app: HttpApp[IO] =
@@ -42,8 +36,8 @@ object Main extends IOApp.Simple {
 
   override def run: IO[Unit] =
     EmberServerBuilder.default[IO]
-      .withHost(host)
-      .withPort(port)
+      .withHost(ipv4"0.0.0.0")
+      .withPort(port"8080")
       .withHttpApp(app)
       .build
       .useForever

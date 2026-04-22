@@ -20,3 +20,7 @@ project/project/
 .sbt-boot/
 .sbt-global/
 apply-debug.json
+
+# Generated temporary files
+tmp_pdf_pages/
+tmp_lighthouse/
