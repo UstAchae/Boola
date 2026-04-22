@@ -24,3 +24,4 @@ apply-debug.json
 # Generated temporary files
 tmp_pdf_pages/
 tmp_lighthouse/
+scripts/
